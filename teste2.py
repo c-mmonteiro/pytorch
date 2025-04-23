@@ -17,10 +17,10 @@ class RedeNeurotica(nn.Module):
         self.fc1 = nn.Linear(input_size, hidden_size)
         #self.fc2 = nn.LSTM(10, hidden_size, num_layers_lstm, batch_first=True, dropout=dropout)
         self.fc2 = nn.Linear(hidden_size,hidden_size)
-        self.fc3 = nn.Linear(hidden_size, 1)
+        self.fc3 = nn.Linear(hidden_size, 2)
 
     def forward(self, x):
-        out = self.fc1(x)
+        out = self.fc1(x.view(x.size(0), -1))
         out = self.fc2(out)
         out = self.fc3(out)
         return out       
@@ -70,7 +70,7 @@ class AdmRede():
       y_train.append(self.y_train[i + num_atrasos])
     self.X_train, self.y_train = np.array(X_train), np.array(y_train)
     self.X_train = torch.tensor(self.X_train, dtype=torch.float32)
-    self.y_train = torch.tensor(self.y_train, dtype=torch.float32)
+    self.y_train = torch.tensor(self.y_train, dtype=torch.long).squeeze()
 
     X_test, y_test = [], []
     for i in range(len(self.X_test) - num_atrasos):
@@ -78,9 +78,9 @@ class AdmRede():
       y_test.append(self.y_test[i + num_atrasos])
     self.X_test, self.y_test = np.array(X_test), np.array(y_test)
     self.X_test = torch.tensor(self.X_test, dtype=torch.float32)
-    self.y_test = torch.tensor(self.y_test, dtype=torch.float32)
+    self.y_test = torch.tensor(self.y_test, dtype=torch.long).squeeze()
 
-    print(f'Len: {len(self.X_test[0])} - {self.X_test.shape}')
+    #print(f'Len: {len(self.X_test[0])} - {self.X_test.shape}')
     self.modelo = RedeNeurotica(len(self.X_test[0]), hidden_size, num_layers_lstm, dropout)
 
   def treinar(self, batch_size = 10, epochs=5, lr=0.001):
@@ -94,8 +94,8 @@ class AdmRede():
             running_loss = 0.0
             self.modelo.train()
             for batch_X, batch_y in train_loader:
-                print(batch_y)
                 outputs = self.modelo(batch_X)
+                #print(f'{outputs.shape} - {batch_y.shape}')
                 loss = loss_fn(outputs, batch_y)
 
                 optimizer.zero_grad()
@@ -111,18 +111,28 @@ class AdmRede():
     self.modelo.eval()
     with torch.no_grad():
       predict = self.modelo(X_pred_ts)
-      return predict
+      _, predicted = torch.max(predict, 1)
+      return predicted
     
   def avaliar(self):
-        correct = 0
-        total = 0
-        for idx, x in enumerate(self.X_test):
-            y_pred = self.prever(x)
-            print(f'pred: {y_pred} - {self.y_test[idx]}')
-            if (y_pred == self.y_test[idx]):
-              total += 1
-              correct += 1
-        print(f'Acurácia no conjunto de teste: {100 * correct / total:.2f}%')
+    test_dataset = TensorDataset(self.X_train, self.y_train)
+    test_loader = DataLoader(test_dataset)
+
+    correct = 0
+    total = 0
+
+    for batch_X, batch_y in test_loader:
+      y_pred = self.prever(batch_X)
+      #print(f'pred: {y_pred} - {batch_y}')
+      if (y_pred == batch_y):
+        total += 1
+        correct += 1
+      else:
+        total += 1
+    print(f'Total: {total} - Correto: {correct}')
+    print(f'Acurácia no conjunto de teste: {100 * correct / total:.2f}%')
+
+    return 100 * correct / total
         
 
 
@@ -133,9 +143,13 @@ class AdmRede():
 
 arquivo = 'TIN_Tudo_PETR4_25894_FROM_2018_09_28_TO_2025_04_01.csv'
 
-rede = AdmRede(arquivo, 600, 1, False, 50, 4, 0.2)
-rede.treinar()
-rede.avaliar()
+acuracia = []
+for i in range(1, 10):
+  rede = AdmRede(arquivo, 600, 1, False, 50, 4, 0.001)
+  rede.treinar()
+  acuracia.append(rede.avaliar())
+
+print(acuracia)
 
 
 
