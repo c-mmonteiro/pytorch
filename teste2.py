@@ -12,30 +12,36 @@ from sklearn.preprocessing import MinMaxScaler
 
 from organizar_pd import *
 
+
 #Google: pytorch for time series forecasting
 
 class RedeNeurotica(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers_lstm, dropout=0.2):
+    def __init__(self, input_size, hidden_size, num_hidden_layers, act_fun):
         super(RedeNeurotica, self).__init__()
         #self.fc2 = nn.LSTM(hidden_size, hidden_size, num_layers_lstm, batch_first=True, dropout=dropout)
-        self.fc1 = nn.Linear(input_size, hidden_size)
-        self.fc2 = nn.Linear(hidden_size,hidden_size)
-        self.fc3 = nn.Linear(hidden_size, 2)
+        self.act_fun = act_fun
+
+        self.hidden_layers = nn.ModuleList()
+        self.hidden_layers.append(nn.Linear(input_size, hidden_size))
+
+        for _ in range(num_hidden_layers -1):
+           self.hidden_layers.append(nn.Linear(hidden_size, hidden_size))
+
+        self.hidden_layers.append(nn.Linear(hidden_size, 2))
 
     def forward(self, x):
-        out = F.relu(self.fc1(x.view(x.size(0), -1)))
-        #out, _ = self.fc2(out)
-        out = F.relu(self.fc2(out))
-        out = self.fc3(out)
-        return out       
+        out = x.view(x.size(0), -1)
+        for layer in self.hidden_layers:
+            out = self.act_fun(layer(out))
+        
+        return out     
 
 
 class AdmRede():
-  def __init__(self, data_file, train_len=600, num_atrasos=1, en_ti=False, hidden_size=30, num_layers_lstm=3, dropout=0.2):
-    self.dados_pd = organizar_pd(3, 1).get_dados()
+  def __init__(self, data_file, train_len=600, num_dias_lag = 3, num_dias_previsao=1, hidden_size=30, num_hidden_layers=3, act_fun=F.relu):
+    self.dados_pd = organizar_pd(num_dias_lag, num_dias_previsao).get_dados()
 
     #print(f'pd {self.dados_pd.head(6)}')
-
     self.train_len = train_len
     self.test_len = len(self.dados_pd)-self.train_len
 
@@ -69,7 +75,7 @@ class AdmRede():
     #print(f'\ny Test2\n {self.y_test[5]} \n\n ---------------- \n\n {self.y_test.shape}')
 
 
-    self.modelo = RedeNeurotica(len(self.X_test[0]), hidden_size, num_layers_lstm, dropout)
+    self.modelo = RedeNeurotica(len(self.X_test[0]), hidden_size, num_hidden_layers, act_fun)
 
   def treinar(self, batch_size = 50, epochs=10, lr=0.001, shuffle=True):
         train_dataset = TensorDataset(self.X_train, self.y_train)
@@ -95,7 +101,7 @@ class AdmRede():
             print(f"Época {epoch+1}, Loss médio: {running_loss/len(train_loader):.4f}")
 
   def prever(self, X_pred):
-    X_pred_ts = torch.as_tensor(X_pred).view(1, -1, 1).float()
+    X_pred_ts = torch.as_tensor(X_pred).view(1, -1).float()
     self.modelo.eval()
     with torch.no_grad():
       predict = self.modelo(X_pred_ts)
@@ -103,7 +109,7 @@ class AdmRede():
       return predicted
     
   def avaliar(self):
-    test_dataset = TensorDataset(self.X_train, self.y_train)
+    test_dataset = TensorDataset(self.X_test, self.y_test)
     test_loader = DataLoader(test_dataset)
 
     correct = 0
@@ -133,13 +139,9 @@ arquivo = 'TIN_Tudo_PETR4_25894_FROM_2018_09_28_TO_2025_04_01.csv'
 
 acuracia = []
 for i in range(1, 10):
-  rede = AdmRede(arquivo, 600, 1, False, 50, 4, 0.001)
+  rede = AdmRede(arquivo, 600, 3, 5, 4, 4)
   rede.treinar()
   acuracia.append(rede.avaliar())
 
 print(acuracia)
-
-
-
-
 
